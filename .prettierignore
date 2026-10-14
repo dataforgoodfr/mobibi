@@ -1,0 +1,7 @@
+.next
+.claude
+pnpm-lock.yaml
+src/payload-types.ts
+src/payload-generated-schema.ts
+importMap.js
+src/migrations/
