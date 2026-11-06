@@ -48,3 +48,14 @@ node_modules/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
+
+#google APIs
+credentials.json
+
+#checkpoint
+credentials-checkpoint.json
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+
+*:Zone.Identifier
+*Zone.Identifier
