@@ -50,16 +50,19 @@ contacts = pd.json_normalize(res_contacts.json()["data"])
 contacts = contacts.dropna(subset=["valElec"])
 contacts = contacts.rename(columns={"acteurRefUid": "id", "valElec": "valeur"})
 
-# Sélection des colonnes utiles, nettoyage et filtrage des emails officiels
+# Sélection des colonnes utiles, mettre à jour nom colonne "typeLibelle" pour les emails officiels et autres emails
 contacts = contacts[["uid", "id", "typeLibelle", "valeur"]]
 contacts["valeur"] = contacts["valeur"].str.strip()
 contacts = contacts.drop_duplicates(subset=["valeur"])
 
-mask = (contacts["typeLibelle"] != "Mèl") | (
-    (contacts["typeLibelle"] == "Mèl")
-    & (contacts["valeur"].str.endswith("assemblee-nationale.fr", na=False))
-)
-contacts = contacts[mask]
+mask1=(contacts["valeur"].str.endswith("assemblee-nationale.fr", na=False))
+
+contacts.loc[mask1,["typeLibelle"]]="Email_officiel"
+
+mask2=(contacts["typeLibelle"]=="Mèl") & (~contacts["valeur"].str.endswith("assemblee-nationale.fr", na=False))
+
+contacts.loc[mask2,["typeLibelle"]]="Autres_emails"
+
 
 
 # 3. Pivotement de la table contacts pour passer d'un format long à un format large (1 ligne par député)
@@ -72,13 +75,13 @@ contacts_pivot = contacts.pivot_table(
 
 # Nettoyage du nom de l'index des colonnes
 contacts_pivot.columns.name = None
+contacts_pivot=contacts_pivot.drop(columns=["Url sénateur","Télécopie","Téléphone"])
 
-
-# 4. Fusion (merge) entre les députés et leurs contacts pivotés
+# 4. Fusion (merge) entre les députés et leurs contacts pivotés 
 depute_et_cont = deputes.merge(
     contacts_pivot, on="id", how="left", suffixes=("_depute", "_contact")
 )
-depute_et_cont = depute_et_cont.rename(columns={"Mèl": "E-mail officiel"})
+
 
 
 # 5. Export final en CSV
