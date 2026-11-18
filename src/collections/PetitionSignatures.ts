@@ -1,7 +1,7 @@
 import type { CollectionBeforeValidateHook, CollectionConfig } from 'payload'
 import { ValidationError } from 'payload'
 
-import { isAdmin, isCitizen, nobody } from '@/access'
+import { isAdmin, nobody } from '@/access'
 import { decrementSignatureCounter, incrementSignatureCounter } from '@/hooks/counters'
 import { toId } from '@/lib/relations'
 
@@ -58,7 +58,8 @@ export const PetitionSignatures: CollectionConfig = {
     // /api/petitions/:id/recent-signatures endpoint, which exposes only
     // pseudo + city + date. Opening `read` here would expose citizen emails.
     read: isAdmin,
-    create: isCitizen,
+    // Written only by `createSignature()`; REST would trust a body-supplied `citizen`.
+    create: nobody,
     update: nobody,
     delete: isAdmin,
   },
