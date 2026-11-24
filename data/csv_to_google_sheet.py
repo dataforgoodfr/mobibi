@@ -12,6 +12,7 @@ import os
 from dotenv import load_dotenv
 import gspread
 import pandas as pd
+import json
 
 # 1. Load environment variables from the .env file
 load_dotenv()
@@ -32,23 +33,8 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
-# 3. Build the credentials dictionary from .env variables
-credentials_dict = {
-    "type": os.getenv("GOOGLE_TYPE"),
-    "project_id": os.getenv("GOOGLE_PROJECT_ID"),
-    "private_key_id": os.getenv("GOOGLE_PRIVATE_KEY_ID"),
-    # Replace escaped '\\n' from .env into actual newlines '\n'
-    "private_key": os.getenv("GOOGLE_PRIVATE_KEY", "").replace("\\n", "\n"),
-    "client_email": os.getenv("GOOGLE_CLIENT_EMAIL"),
-    "client_id": os.getenv("GOOGLE_CLIENT_ID"),
-    "auth_uri": os.getenv("GOOGLE_AUTH_URI"),
-    "token_uri": os.getenv("GOOGLE_TOKEN_URI"),
-    "auth_provider_x509_cert_url": os.getenv(
-        "GOOGLE_AUTH_PROVIDER_X509_CERT_URL"
-    ),
-    "client_x509_cert_url": os.getenv("GOOGLE_CLIENT_X509_CERT_URL"),
-    "universe_domain": os.getenv("GOOGLE_UNIVERSE_DOMAIN"),
-}
+# 3. Parse the JSON string directly into a dictionary
+credentials_dict = json.loads(os.environ["GOOGLE_CREDENTIALS_JSON"])
 
 # 4. Read the CSV file using the CLI argument
 print(f"Lecture du fichier CSV : {args.csv_path}...")

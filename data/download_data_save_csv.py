@@ -82,9 +82,10 @@ depute_et_cont = deputes.merge(
     contacts_pivot, on="id", how="left", suffixes=("_depute", "_contact")
 )
 
+# 5. Ajout d'une colonne "commentaire" pour mettre des informations supplémentaires sur les députés ou leurs contacts
+depute_et_cont["commentaire"] = "Commentaire sur le député ou ses contacts"
 
-
-# 5. Export final en CSV
+# 6. Export final en CSV
 depute_et_cont.to_csv("deputes_et_contactes_tricouteuse.csv", index=False)
 
 print(f"Fichier exporté avec succès ! Dimensions : {depute_et_cont.shape}")
