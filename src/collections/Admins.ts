@@ -1,5 +1,7 @@
 import type { CollectionConfig } from 'payload'
 
+import { isAdmin } from '@/access'
+
 /**
  * Platform administrators — the admin-panel login (password auth).
  *
@@ -10,6 +12,13 @@ export const Admins: CollectionConfig = {
   slug: 'admins',
   admin: {
     useAsTitle: 'email',
+  },
+  access: {
+    read: isAdmin,
+    create: isAdmin,
+    update: isAdmin,
+    delete: isAdmin,
+    unlock: isAdmin,
   },
   auth: true,
   fields: [

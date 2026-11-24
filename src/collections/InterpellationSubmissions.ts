@@ -1,6 +1,6 @@
 import type { CollectionConfig } from 'payload'
 
-import { isAdmin, isCitizen, nobody } from '@/access'
+import { isAdmin, nobody } from '@/access'
 import { decrementInterpellationCounters, incrementInterpellationCounters } from '@/hooks/counters'
 
 /**
@@ -21,7 +21,8 @@ export const InterpellationSubmissions: CollectionConfig = {
   access: {
     // Never public: the rows carry citizen identities and free-text feedback.
     read: isAdmin,
-    create: isCitizen,
+    // Written only by `createSubmission()`; REST would trust a body-supplied `citizen`.
+    create: nobody,
     update: nobody,
     delete: isAdmin,
   },
