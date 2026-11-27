@@ -31,3 +31,10 @@ export const requiredInDefaultLocale =
 
     return true
   }
+
+export const RESERVED_ORGANIZATION_SLUGS = ['dashboard']
+
+export const reservedOrganizationSlug = (value: unknown): string | true =>
+  typeof value === 'string' && RESERVED_ORGANIZATION_SLUGS.includes(value)
+    ? 'This slug is reserved.'
+    : true

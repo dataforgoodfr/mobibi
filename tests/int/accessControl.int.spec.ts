@@ -2,11 +2,12 @@ import { getPayload, type Payload, type PayloadRequest } from 'payload'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import config from '@/payload.config'
-import type { Admin, Citizen } from '@/payload-types'
+import type { Admin, Campaigner, Citizen } from '@/payload-types'
 
 let payload: Payload
 let citizen: Citizen & { collection: 'citizens' }
 let admin: Admin & { collection: 'admins' }
+let campaigner: Campaigner & { collection: 'campaigners' }
 
 /** Unique per run so repeated runs never collide on emails or filenames. */
 const run = Date.now()
@@ -35,9 +36,20 @@ describe('access control', () => {
       })),
       collection: 'admins',
     }
+    campaigner = {
+      ...(await payload.create({
+        collection: 'campaigners',
+        data: { email: `access-${run}-campaigner@example.com`, name: 'Probe' },
+      })),
+      collection: 'campaigners',
+    }
   })
 
   afterAll(async () => {
+    await payload.delete({
+      collection: 'campaigners',
+      where: { email: { contains: `access-${run}` } },
+    })
     await payload.delete({
       collection: 'media',
       where: { filename: { contains: `access-${run}` } },
@@ -146,6 +158,45 @@ describe('access control', () => {
         overrideAccess: false,
       })
       expect(read.alt).toBe('Org logo')
+    })
+  })
+
+  describe('campaigners', () => {
+    it('a citizen cannot read campaigners or their sessions', async () => {
+      for (const collection of ['campaigners', 'campaigner-sessions'] as const) {
+        await expect(
+          payload.find({ collection, user: citizen, overrideAccess: false }),
+        ).rejects.toThrow(/not allowed/i)
+      }
+    })
+
+    it('an admin can read campaigners but not their sessions', async () => {
+      const found = await payload.find({
+        collection: 'campaigners',
+        user: admin,
+        overrideAccess: false,
+      })
+      expect(found.totalDocs).toBeGreaterThan(0)
+      await expect(
+        payload.find({ collection: 'campaigner-sessions', user: admin, overrideAccess: false }),
+      ).rejects.toThrow(/not allowed/i)
+    })
+
+    it('a campaigner has no read access to protected collections', async () => {
+      const user = campaigner as unknown as Citizen & { collection: 'citizens' }
+      for (const collection of [
+        'citizens',
+        'admins',
+        'petition-signatures',
+        'interpellation-submissions',
+        'magic-links',
+        'campaigners',
+        'campaigner-sessions',
+      ] as const) {
+        await expect(payload.find({ collection, user, overrideAccess: false })).rejects.toThrow(
+          /not allowed/i,
+        )
+      }
     })
   })
 })

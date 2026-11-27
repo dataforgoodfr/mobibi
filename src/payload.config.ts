@@ -15,6 +15,8 @@ import { InterpellationSubmissions } from './collections/InterpellationSubmissio
 import { PetitionSignatures } from './collections/PetitionSignatures'
 import { Citizens } from './collections/Citizens'
 import { MagicLinks } from './collections/MagicLinks'
+import { Campaigners } from './collections/Campaigners'
+import { CampaignerSessions } from './collections/CampaignerSessions'
 import { getCampaignerAuthConfig } from './lib/campaignerAuthConfig'
 import { emailAdapter } from './lib/email'
 import { migrations } from './migrations'
@@ -53,6 +55,8 @@ export default buildConfig({
     PetitionSignatures,
     Citizens,
     MagicLinks,
+    Campaigners,
+    CampaignerSessions,
   ],
   // Editorial content is authored per locale; slugs, emails, handles, counters and
   // everything on the submission/signature side stay single-valued.
