@@ -15,11 +15,15 @@ import { InterpellationSubmissions } from './collections/InterpellationSubmissio
 import { PetitionSignatures } from './collections/PetitionSignatures'
 import { Citizens } from './collections/Citizens'
 import { MagicLinks } from './collections/MagicLinks'
+import { getCampaignerAuthConfig } from './lib/campaignerAuthConfig'
 import { emailAdapter } from './lib/email'
 import { migrations } from './migrations'
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
+
+// Throws on a bad campaigner auth config, so a misconfigured install fails at boot.
+getCampaignerAuthConfig()
 
 export default buildConfig({
   // Deliberately NOT set: Payload's own `url` field on uploads hardcodes
