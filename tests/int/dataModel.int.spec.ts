@@ -32,7 +32,7 @@ describe('data model', () => {
 
     const org = await payload.create({
       collection: 'organizations',
-      data: { name: `Test org ${run}`, slug: `test-org-${run}` },
+      data: { name: `Test org ${run}`, slug: `test-datamodel-org-${run}` },
     })
     orgId = org.id
 
