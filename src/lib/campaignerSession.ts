@@ -225,3 +225,37 @@ export const getCampaigner = async (
     return deleteSession(payload, session.id)
   }
 }
+
+/** Ends the local session and returns where to send the browser to end the provider's. */
+export const logoutCampaigner = async (
+  payload: Payload,
+  headers: Headers,
+): Promise<{ redirectUrl: string; setCookie: string }> => {
+  const config = getCampaignerAuthConfig()
+  if (config.method !== 'oidc') throw new Error('Campaigner logout requires the oidc method')
+  const { postLogoutRedirectUri } = config.oidc
+
+  const session = await readCampaignerSession(payload, headers)
+  if (session) await deleteSession(payload, session.id)
+
+  const result = (redirectUrl: string) => ({
+    redirectUrl,
+    setCookie: clearCampaignerSessionCookie(),
+  })
+  if (!session?.idToken) return result(postLogoutRedirectUri)
+
+  try {
+    const client = await getOidcClient()
+    if (!client.serverMetadata().end_session_endpoint) return result(postLogoutRedirectUri)
+    const url = oidcClient.buildEndSessionUrl(client, {
+      id_token_hint: session.idToken,
+      post_logout_redirect_uri: postLogoutRedirectUri,
+    })
+    return result(url.href)
+  } catch (error) {
+    // The local session is already gone; an unreachable provider must not keep the user stuck.
+    const detail = error instanceof Error ? error.message : 'unknown error'
+    payload.logger.error(`Campaigner logout could not reach the provider: ${detail}`)
+    return result(postLogoutRedirectUri)
+  }
+}

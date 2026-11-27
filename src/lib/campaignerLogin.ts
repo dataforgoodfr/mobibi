@@ -1,7 +1,6 @@
-import config from '@payload-config'
 import { jwtVerify, SignJWT } from 'jose'
 import * as oidcClient from 'openid-client'
-import { getPayload, ValidationError, type Payload } from 'payload'
+import { ValidationError, type Payload } from 'payload'
 
 import { getCampaignerAuthConfig, type OidcConfig } from './campaignerAuthConfig'
 import { getOidcClient, hasClientRole } from './campaignerOidc'
@@ -23,7 +22,7 @@ type LoginResult =
 
 type Flow = { state: string; nonce: string; codeVerifier: string; returnTo: string }
 
-const FLOW_COOKIE = 'campaigner-oidc'
+export const FLOW_COOKIE = 'campaigner-oidc'
 const FLOW_TTL_SECONDS = 600
 const FLOW_AUDIENCE = 'campaigner-oidc-flow'
 const DEFAULT_RETURN_TO = '/fr/dashboard'
@@ -46,10 +45,11 @@ const flowCookie = (value: string, maxAge: number): string =>
   campaignerCookie(FLOW_COOKIE, value, maxAge)
 
 export const startLogin = async (
+  payload: Payload,
   returnTo: string | null,
 ): Promise<{ redirectUrl: string; setCookie: string }> => {
   const oidc = requireOidc()
-  const [client, payload] = await Promise.all([getOidcClient(), getPayload({ config })])
+  const client = await getOidcClient()
 
   const state = oidcClient.randomState()
   const nonce = oidcClient.randomNonce()
@@ -97,7 +97,7 @@ const readFlow = async (secret: string, token: string | undefined): Promise<Flow
   }
 }
 
-const langOf = (returnTo: string | undefined): Locale => {
+export const langOf = (returnTo: string | undefined): Locale => {
   const segment = returnTo?.split(/[/?#]/)[1] ?? ''
   return isLocale(segment) ? segment : 'fr'
 }

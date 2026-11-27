@@ -1,6 +1,7 @@
 import { ValidationError, type CollectionConfig } from 'payload'
 
 import { isAdmin } from '@/access'
+import { campaignerEndpoints } from '@/endpoints/campaigners'
 
 export const Campaigners: CollectionConfig = {
   slug: 'campaigners',
@@ -16,6 +17,7 @@ export const Campaigners: CollectionConfig = {
     update: isAdmin,
     delete: isAdmin,
   },
+  endpoints: campaignerEndpoints(),
   hooks: {
     beforeValidate: [
       async ({ data, originalDoc, req }) => {
