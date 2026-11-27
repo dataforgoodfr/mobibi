@@ -15,11 +15,17 @@ import { InterpellationSubmissions } from './collections/InterpellationSubmissio
 import { PetitionSignatures } from './collections/PetitionSignatures'
 import { Citizens } from './collections/Citizens'
 import { MagicLinks } from './collections/MagicLinks'
+import { Campaigners } from './collections/Campaigners'
+import { CampaignerSessions } from './collections/CampaignerSessions'
+import { getCampaignerAuthConfig } from './lib/campaignerAuthConfig'
 import { emailAdapter } from './lib/email'
 import { migrations } from './migrations'
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
+
+// Throws on a bad campaigner auth config, so a misconfigured install fails at boot.
+getCampaignerAuthConfig()
 
 export default buildConfig({
   // Deliberately NOT set: Payload's own `url` field on uploads hardcodes
@@ -49,6 +55,8 @@ export default buildConfig({
     PetitionSignatures,
     Citizens,
     MagicLinks,
+    Campaigners,
+    CampaignerSessions,
   ],
   // Editorial content is authored per locale; slugs, emails, handles, counters and
   // everything on the submission/signature side stay single-valued.
@@ -65,6 +73,7 @@ export default buildConfig({
   db: postgresAdapter({
     pool: {
       connectionString: process.env.DATABASE_URL || '',
+      max: Number(process.env.DATABASE_POOL_MAX) || undefined,
     },
     // Runs any pending migrations at payload.init() when push is off (i.e.
     // in production — push stays on by default in dev).

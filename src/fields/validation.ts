@@ -1,4 +1,5 @@
-import type { PayloadRequest } from 'payload'
+import type { PayloadRequest, TextField, Validate } from 'payload'
+import { text } from 'payload/shared'
 
 type ValidateArgs = { req: PayloadRequest }
 
@@ -31,3 +32,15 @@ export const requiredInDefaultLocale =
 
     return true
   }
+
+export const RESERVED_ORGANIZATION_SLUGS = ['dashboard']
+
+// A custom `validate` replaces Payload's default one, so `required` and length checks run here.
+// Typed loosely so it fits `slugField`'s `TextField` union, `hasMany` branch included.
+export const reservedOrganizationSlug: Validate<unknown, unknown, unknown, TextField> = (
+  value,
+  options,
+) =>
+  typeof value === 'string' && RESERVED_ORGANIZATION_SLUGS.includes(value)
+    ? 'This slug is reserved.'
+    : text(value as string, options as Parameters<typeof text>[1])

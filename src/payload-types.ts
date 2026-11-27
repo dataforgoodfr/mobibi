@@ -78,6 +78,8 @@ export interface Config {
     'petition-signatures': PetitionSignature;
     citizens: Citizen;
     'magic-links': MagicLink;
+    campaigners: Campaigner;
+    'campaigner-sessions': CampaignerSession;
     'payload-kv': PayloadKv;
     'payload-locked-documents': PayloadLockedDocument;
     'payload-preferences': PayloadPreference;
@@ -106,6 +108,8 @@ export interface Config {
     'petition-signatures': PetitionSignaturesSelect<false> | PetitionSignaturesSelect<true>;
     citizens: CitizensSelect<false> | CitizensSelect<true>;
     'magic-links': MagicLinksSelect<false> | MagicLinksSelect<true>;
+    campaigners: CampaignersSelect<false> | CampaignersSelect<true>;
+    'campaigner-sessions': CampaignerSessionsSelect<false> | CampaignerSessionsSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
     'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
     'payload-preferences': PayloadPreferencesSelect<false> | PayloadPreferencesSelect<true>;
@@ -583,6 +587,47 @@ export interface MagicLink {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "campaigners".
+ */
+export interface Campaigner {
+  id: number;
+  email: string;
+  name?: string | null;
+  /**
+   * Set on first OIDC login; the identity provider that vouched for this person.
+   */
+  oidcIssuer?: string | null;
+  /**
+   * Set on first OIDC login; the stable user id at the identity provider.
+   */
+  oidcSubject?: string | null;
+  lastLoginAt?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "campaigner-sessions".
+ */
+export interface CampaignerSession {
+  id: number;
+  campaigner: number | Campaigner;
+  expiresAt: string;
+  /**
+   * Session id from the identity provider, used for back-channel logout.
+   */
+  oidcSid?: string | null;
+  /**
+   * Kept as the hint for RP-initiated logout.
+   */
+  idToken?: string | null;
+  refreshToken?: string | null;
+  accessTokenExpiresAt?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-kv".
  */
 export interface PayloadKv {
@@ -644,6 +689,14 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'magic-links';
         value: number | MagicLink;
+      } | null)
+    | ({
+        relationTo: 'campaigners';
+        value: number | Campaigner;
+      } | null)
+    | ({
+        relationTo: 'campaigner-sessions';
+        value: number | CampaignerSession;
       } | null);
   globalSlug?: string | null;
   user:
@@ -931,6 +984,33 @@ export interface MagicLinksSelect<T extends boolean = true> {
         type?: T;
         payload?: T;
       };
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "campaigners_select".
+ */
+export interface CampaignersSelect<T extends boolean = true> {
+  email?: T;
+  name?: T;
+  oidcIssuer?: T;
+  oidcSubject?: T;
+  lastLoginAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "campaigner-sessions_select".
+ */
+export interface CampaignerSessionsSelect<T extends boolean = true> {
+  campaigner?: T;
+  expiresAt?: T;
+  oidcSid?: T;
+  idToken?: T;
+  refreshToken?: T;
+  accessTokenExpiresAt?: T;
   updatedAt?: T;
   createdAt?: T;
 }

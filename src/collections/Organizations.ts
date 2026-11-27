@@ -2,6 +2,7 @@ import type { CollectionConfig } from 'payload'
 
 import { anyone, isAdmin } from '@/access'
 import { slugField } from '@/fields/slug'
+import { reservedOrganizationSlug } from '@/fields/validation'
 
 export const Organizations: CollectionConfig = {
   slug: 'organizations',
@@ -23,7 +24,7 @@ export const Organizations: CollectionConfig = {
       type: 'text',
       required: true,
     },
-    { ...slugField('name'), unique: true },
+    { ...slugField('name'), unique: true, validate: reservedOrganizationSlug },
     {
       name: 'shortName',
       type: 'text',

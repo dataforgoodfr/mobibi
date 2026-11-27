@@ -20,3 +20,20 @@ if (!testDatabaseUrl) {
 }
 
 process.env.DATABASE_URL = testDatabaseUrl
+
+// Each test file runs in its own worker with its own Payload pool: at pg's default of 10
+// connections, one worker per core exhausts a local Postgres's max_connections of 100.
+process.env.DATABASE_POOL_MAX = '3'
+
+// Forced, not defaulted: a developer's `.env` points OIDC at a real Keycloak, and the
+// int tests must only ever talk to the mock started on port 4010.
+const campaignerAuthTestEnv = {
+  CAMPAIGNER_AUTH_METHOD: 'oidc',
+  OIDC_ISSUER: 'http://localhost:4010',
+  OIDC_CLIENT_ID: 'mobibi',
+  OIDC_CLIENT_SECRET: 'test-secret',
+  OIDC_REQUIRED_ROLE: 'access',
+  PAYLOAD_PUBLIC_SERVER_URL: 'http://localhost:3000',
+}
+
+Object.assign(process.env, campaignerAuthTestEnv)

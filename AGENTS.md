@@ -12,7 +12,8 @@
 - **Next.js 16** : App Router, Turbopack. Two route groups — `(frontend)` for the public site, `(payload)` for the admin panel and API.
 - **Payload 3.85** : CMS, admin panel, auth, REST + GraphQL. Config in `src/payload.config.ts`.
 - **Postgres** : via `@payloadcms/db-postgres`. Schema is pushed automatically in dev.
-- **Drizzle** : not used directly except for atomic counter updates in `src/lib/counters.ts`.
+- **Drizzle** : not used directly except for atomic raw-SQL claims and counters (`src/lib/counters.ts`, `magicLink.ts`, `campaignerSession.ts`), through `getDb(req)` or, without a `req`, `getDrizzleDb(payload)`.
+- **`openid-client` v6** : campaigner OIDC login (`src/lib/campaignerOidc.ts`).
 - **React 19 + Tailwind CSS 4 + shadcn** : `components.json` (style `base-nova`, lucide icons), components in `src/components/ui/`.
 - **pnpm 11 / Node 22**.
 
@@ -22,12 +23,14 @@
 - `/:lang` : all active mobilisations, across organizations.
 - `/:lang/:organization` : organization page and its mobilisations.
 - `/:lang/:organization/:slug` : a mobilisation, either type. Self-contained and shareable.
+- `/:lang/dashboard` : signed-in campaigner page; a signed-out visitor goes straight to the provider. `/:lang/dashboard/login` : login error page only, never redirects by itself (no loop when the provider keeps refusing). Both 404 unless `CAMPAIGNER_AUTH_METHOD=oidc`.
 - `/admin` : Payload admin panel.
 - `/api/*` : Payload REST API. `/api/graphql` for GraphQL.
 - `/api/petitions/:id/recent-signatures` : custom endpoint returning only pseudo + city + date, so `petition-signatures` can stay admin-only and never expose citizen emails.
 - `/api/petitions/:id/sign` (POST) : writes the signature straight away for a citizen who already has a session, otherwise issues a magic link carrying the filled-in form as its intent.
 - `/api/campaign-targets/:id/interpellate` (POST) : the same two outcomes for « j'ai interpellé ». Mounted on the target, not on the campaign, because the target is the thing acted on and carries its own campaign — so the campaign is never trusted from the request body.
 - `/api/citizens/magic-link` (POST) : requests a magic link. `/api/citizens/magic-link/verify` (GET) : redeems one — always redirects, the same URL a real emailed link points at. `/api/citizens/session/logout` (POST) : clears the citizen session. Not `/login`/`/logout`/`/verify/:id` — those paths are reserved, auto-registered by Payload on every auth-enabled collection.
+- `/api/campaigners/oidc/authorize` (GET), `/oidc/callback` (GET), `/session/logout` (POST), `/oidc/backchannel-logout` (POST) : campaigner OIDC login, logout and provider-initiated logout. All 404 unless `CAMPAIGNER_AUTH_METHOD=oidc`.
 
 ## Data model
 
@@ -41,6 +44,8 @@ Collections in `src/collections/`. Field and collection names are English; conte
 - `petition-signatures` : one signature.
 - `citizens` : public accounts (magic link).
 - `magic-links` : pending token + the action to perform when it is clicked.
+- `campaigners` : nonprofit staff who run campaigns; identity `(oidcIssuer, oidcSubject)` in OIDC mode, `email` unique for the future magic-link mode.
+- `campaigner-sessions` : one row per campaigner session (`nobody` access); OIDC fields nullable so a magic-link session fits.
 - `admins` : platform administrators.
 - `media` : uploads.
 
@@ -67,6 +72,12 @@ Collections in `src/collections/`. Field and collection names are English; conte
 - **`citizens.emailVerified` and `citizens.sessions` keep `access: { update: () => false }` on purpose** : `citizens.access.update` is `isAdminOrSelf`, so without the lock a citizen could self-verify their own email or forge a session id via their own REST `PATCH`. Only server-side redemption (`src/lib/magicLink.ts`) bypasses it, via the Local API's default `overrideAccess: true`.
 - **Magic-link redemption is single-use via an atomic `UPDATE … WHERE used_at IS NULL`**, not check-then-write : a race would mint two sessions from one link, or — once a slice writes a submission/signature inside redemption — double-count an action. Keep any future write inside `consumeMagicLink()` on the far side of that claim.
 - **Every collection declares `create`/`update`/`delete`** : an omitted rule defaults to `Boolean(req.user)`, which any citizen session passes. Server-only writes use `nobody` (the Local API skips access). Enforced by `tests/int/accessControl.int.spec.ts`.
+- **Campaigners are resolved by `getCampaigner(payload, headers)`, not an `AuthStrategy`** (`src/lib/campaignerSession.ts`) : Payload resolves one `req.user` per request, so a campaigner strategy would hide the citizen or admin session of someone signed in as both. Pass `user: { ...campaigner, collection: 'campaigners' }, overrideAccess: false` when acting on their behalf.
+- **One campaigner login method per installation** (`CAMPAIGNER_AUTH_METHOD`, read only in `src/lib/campaignerAuthConfig.ts`) : unset disables campaigners, a bad value or missing `OIDC_*` var refuses to start. Presence checks only — an unreachable provider must not stop mobibi from booting. Both collections are registered whatever the value, so schema and migrations never depend on env.
+- **`accessTokenExpiresAt` doubles as the refresh lock** : `getCampaigner()` claims a refresh with one `UPDATE … WHERE access_token_expires_at IS NULL OR < now() RETURNING`, so parallel requests never refresh twice (a rotating provider would fail the second and end a valid session). Losers serve the request: the access token only gates the role check.
+- **The `campaigner-token` cookie lives a fixed 12 h; the row's `expiresAt` slides** : a refresh only rewrites the row, never the cookie, so tying the cookie to Keycloak's ~30 min refresh expiry would log active campaigners out.
+- **A failed refresh or a missing `OIDC_REQUIRED_ROLE` deletes the session** : this is what catches a disabled user or a removed role, which back-channel logout may not report.
+- **Campaigner refresh tokens are encrypted at rest** (`src/lib/secretBox.ts`, AES-256-GCM, key derived from `PAYLOAD_SECRET`).
 - **Email goes through SMTP (`@payloadcms/email-nodemailer`) when `SMTP_HOST` is set, console-log otherwise** (`src/lib/email.ts`)
 
 ## i18n
@@ -82,6 +93,8 @@ Collections in `src/collections/`. Field and collection names are English; conte
 - **`pnpm test:int`** : Vitest, `tests/int/`. Integration tests through Payload's Local API.
 - **`pnpm test:e2e`** : Playwright, `tests/e2e/`. Stop `pnpm dev` first — Next allows one dev server per directory, and `reuseExistingServer` is false so the suite always starts its own.
 - **Separate database** : both suites run against `DATABASE_URL_TEST` (see `.env.example`), not the dev database. `vitest.setup.ts` and `playwright.config.ts` each override `DATABASE_URL` before Payload's config is imported.
+- **OIDC tests run against `oauth2-mock-server`** (`tests/helpers/oidcMock.ts`) : int tests on port 4010, all in `campaignerOidc.int.spec.ts` because the issuer is process-wide; e2e on 4011, started by `playwright.config.ts`. Both force their OIDC env over `.env`.
+- **Int tests cap the Payload pool at 3** (`DATABASE_POOL_MAX` in `vitest.setup.ts`) : each file opens its own pool, and Payload's schema push at boot fills it, so one worker per core exhausts a local Postgres's 100 connections.
 - **Fixtures clean up after themselves** : each run suffixes slugs and emails with a timestamp and deletes its own rows.
 
 ## Skills

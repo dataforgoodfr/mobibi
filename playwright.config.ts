@@ -28,6 +28,19 @@ if (!databaseUrl) {
 
 process.env.DATABASE_URL = databaseUrl
 
+// Set here as well as on the server: this process imports payload.config for seeding, and a
+// developer's `.env` may point OIDC at a real provider.
+const campaignerAuthEnv = {
+  CAMPAIGNER_AUTH_METHOD: 'oidc',
+  OIDC_ISSUER: 'http://localhost:4011',
+  OIDC_CLIENT_ID: 'mobibi',
+  OIDC_CLIENT_SECRET: 'test-secret',
+  OIDC_REQUIRED_ROLE: 'access',
+  PAYLOAD_PUBLIC_SERVER_URL: 'http://localhost:3000',
+}
+
+Object.assign(process.env, campaignerAuthEnv)
+
 const baseURL = 'http://localhost:3000'
 
 /** Playwright's `env` takes strings only, so drop the unset variables. */
@@ -62,16 +75,23 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'], channel: 'chromium' },
     },
   ],
-  webServer: {
-    command: 'pnpm dev',
-    url: baseURL,
-    /**
-     * Must stay false: reusing a server you already had open would silently put
-     * the tests back on the development database. Next 16 also allows only one
-     * `next dev` per directory, so stop `pnpm dev` before running e2e (or switch
-     * this command to `pnpm build && pnpm start`).
-     */
-    reuseExistingServer: false,
-    env: { ...definedEnv, DATABASE_URL: databaseUrl },
-  },
+  webServer: [
+    {
+      command: 'pnpm tsx tests/helpers/oidcMockServer.ts',
+      port: 4011,
+      reuseExistingServer: false,
+    },
+    {
+      command: 'pnpm dev',
+      url: baseURL,
+      /**
+       * Must stay false: reusing a server you already had open would silently put
+       * the tests back on the development database. Next 16 also allows only one
+       * `next dev` per directory, so stop `pnpm dev` before running e2e (or switch
+       * this command to `pnpm build && pnpm start`).
+       */
+      reuseExistingServer: false,
+      env: { ...definedEnv, DATABASE_URL: databaseUrl, ...campaignerAuthEnv },
+    },
+  ],
 })
