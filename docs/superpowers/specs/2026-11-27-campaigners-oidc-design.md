@@ -52,7 +52,7 @@ Considered for the "one refresh per session at a time" requirement (parallel req
 
 1. **In-memory mutex keyed by session id.** Simplest, but only holds within one Node process: wrong as soon as mobibi runs more than one instance.
 2. **Dedicated lock column** (`refreshLockedUntil`), claimed with an atomic `UPDATE … WHERE lock IS NULL OR lock < now()`. Works across instances; adds a column outside the issue's model.
-3. **`accessTokenExpiresAt` as the lock** — *chosen*. The winner claims the refresh by pushing the expiry forward in one atomic statement; losers then see a not-yet-expired token and carry on. Works across instances, adds nothing to the model, same pattern as `consumeMagicLink()`'s `UPDATE … WHERE used_at IS NULL`.
+3. **`accessTokenExpiresAt` as the lock** — _chosen_. The winner claims the refresh by pushing the expiry forward in one atomic statement; losers then see a not-yet-expired token and carry on. Works across instances, adds nothing to the model, same pattern as `consumeMagicLink()`'s `UPDATE … WHERE used_at IS NULL`.
 
 The rest of the flow has one sensible shape given the issue (`openid-client`, endpoints on the collection, DB-backed sessions); no alternative was weighed.
 
@@ -80,7 +80,7 @@ The only module that reads `CAMPAIGNER_AUTH_METHOD` and `OIDC_*`. Called from `p
 **`campaigner-sessions`** — access `nobody` for every operation; server code only, through the Local API.
 
 - `campaigner` relationship, required, indexed.
-- `expiresAt` date, required — hard end. OIDC: the refresh token's expiry when the provider gives one (`refresh_expires_in` on Keycloak), otherwise a fallback of 12 hours *(builder's call on the constant)*. Magic link will use its own TTL.
+- `expiresAt` date, required — hard end. OIDC: the refresh token's expiry when the provider gives one (`refresh_expires_in` on Keycloak), otherwise a fallback of 12 hours _(builder's call on the constant)_. Magic link will use its own TTL.
 - `oidcSid` text, indexed, nullable.
 - `idToken` text, nullable — plaintext, it grants no access.
 - `refreshToken` text, nullable — **encrypted at rest**, AES-256-GCM, key derived from `PAYLOAD_SECRET` (HKDF or SHA-256 with a fixed context string). No new env var. Never returned to any client; the collection is `nobody` anyway.
@@ -101,19 +101,20 @@ The only module that reads `CAMPAIGNER_AUTH_METHOD` and `OIDC_*`. Called from `p
      ```
      - no row returned → another request is refreshing: return the campaigner. Safe because mobibi never uses the access token to call an API, only to check the role.
      - row returned → refresh with the provider. On success, if `OIDC_REQUIRED_ROLE` is set and absent from the new access token's `resource_access.<OIDC_CLIENT_ID>.roles` → delete the row, return `null`. Otherwise write the new tokens (re-encrypted refresh token, `idToken` if returned, real `accessTokenExpiresAt`, `expiresAt` from the new refresh expiry) and return the campaigner. On failure → delete the row, return `null`. A crash mid-refresh leaves the 30-second claim to lapse, and a later request retries.
-  - A network error reaching the provider is treated as a failed refresh *(builder's call; the conservative choice — revocation must not be bypassable by the provider being unreachable)*.
+  - A network error reaching the provider is treated as a failed refresh _(builder's call; the conservative choice — revocation must not be bypassable by the provider being unreachable)_.
 - Server components cannot set cookies; that is fine here: a refresh only rewrites the row, never the cookie. A deleted row leaves a dead cookie that resolves to `null` and is cleared on the next endpoint response or logout.
 - Local API calls on behalf of a campaigner pass `user: { ...campaigner, collection: 'campaigners' }, overrideAccess: false` (typed explicitly, since `campaigners` is not an auth collection). The existing helpers in `src/access/index.ts` check `user.collection`, so a campaigner matches neither admin nor citizen rules. Nothing in this slice needs such a call yet beyond the tests proving it.
 
 ### Endpoints (on `campaigners`; each returns 404 when the method is not `oidc`)
 
-1. **`GET /api/campaigners/oidc/authorize?returnTo=…`** — `returnTo` must be a relative path (starts with a single `/`, not `//` or `/\`), otherwise default to `/fr/dashboard`. Generate `state`, `nonce`, PKCE verifier; store them with `returnTo` in a short-lived httpOnly cookie (`campaigner-oidc`, signed, ~10 min) *(builder's call; avoids a DB table for in-flight logins)*. Redirect to the provider with scopes `openid email profile`.
+1. **`GET /api/campaigners/oidc/authorize?returnTo=…`** — `returnTo` must be a relative path (starts with a single `/`, not `//` or `/\`), otherwise default to `/fr/dashboard`. Generate `state`, `nonce`, PKCE verifier; store them with `returnTo` in a short-lived httpOnly cookie (`campaigner-oidc`, signed, ~10 min) _(builder's call; avoids a DB table for in-flight logins)_. Redirect to the provider with scopes `openid email profile`.
 2. **`GET /api/campaigners/oidc/callback`** — finish with `openid-client` (state, nonce, issuer, audience, PKCE checked). Then refuse if `email` missing, `email_verified !== true`, or required role missing. Look up by `(iss, sub)`:
    - found → update `email`, `name`, `lastLoginAt`; if the new email belongs to another campaigner, refuse and change nothing.
    - not found, email unused → create.
    - not found, email used → refuse and log (no linking).
 
    Create the session row, set `campaigner-token`, clear `campaigner-oidc`, redirect to `returnTo`. Any error → log the detail server-side, redirect to `/fr/dashboard/login?error=<code>`. Codes are a closed list (e.g. `provider`, `email-unverified`, `access-denied`, `email-conflict`, `state`) mapped to French messages in one module.
+
 3. **`POST /api/campaigners/session/logout`** — delete the row, clear the cookie, redirect (303) to the provider's `end_session_endpoint` with `id_token_hint` and `post_logout_redirect_uri`. No session or no `idToken` → redirect to `/`.
 4. **`POST /api/campaigners/oidc/backchannel-logout`** — validate the logout token per OIDC Back-Channel Logout 1.0 (signature via JWKS, `iss`, `aud`, `iat`, `events` contains `http://schemas.openid.net/event/backchannel-logout`, no `nonce`, `sid` or `sub` present). Delete sessions by `oidcSid`, otherwise all sessions of the campaigner with that `sub` (and issuer). 200 on success, 400 on an invalid token.
 

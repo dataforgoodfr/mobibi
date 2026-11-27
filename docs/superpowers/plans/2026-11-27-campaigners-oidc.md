@@ -38,20 +38,30 @@
 ### Task 1: Campaigner auth config
 
 **Files:**
+
 - Create: `src/lib/campaignerAuthConfig.ts`
 - Modify: `src/payload.config.ts` (call `getCampaignerAuthConfig()` at module top level), `.env.example`, `vitest.setup.ts`
 - Test: `tests/int/campaignerAuthConfig.int.spec.ts`
 
 **Interfaces:**
+
 - Produces:
+
   ```ts
   export type OidcConfig = {
-    issuer: string; clientId: string; clientSecret: string; requiredRole: string | null
-    redirectUri: string; postLogoutRedirectUri: string; backchannelLogoutUri: string
+    issuer: string
+    clientId: string
+    clientSecret: string
+    requiredRole: string | null
+    redirectUri: string
+    postLogoutRedirectUri: string
+    backchannelLogoutUri: string
   }
   export type CampaignerAuthConfig = { method: null } | { method: 'oidc'; oidc: OidcConfig }
   export class CampaignerAuthConfigError extends Error {}
-  export const parseCampaignerAuthConfig: (env: Record<string, string | undefined>) => CampaignerAuthConfig
+  export const parseCampaignerAuthConfig: (
+    env: Record<string, string | undefined>,
+  ) => CampaignerAuthConfig
   export const getCampaignerAuthConfig: () => CampaignerAuthConfig // parses process.env once, cached
   ```
 
@@ -70,10 +80,12 @@
 ### Task 2: Secret encryption
 
 **Files:**
+
 - Create: `src/lib/secretBox.ts`
 - Test: `tests/int/secretBox.int.spec.ts`
 
 **Interfaces:**
+
 - Produces: `encryptSecret(plain: string, secret: string): string` and `decryptSecret(sealed: string, secret: string): string` (throws on tampering or wrong secret).
 
 - [ ] **Step 1: Write the failing tests**: round-trip returns the input; two encryptions of the same input differ; output does not contain the input; flipping one character of the ciphertext part throws; decrypting with another secret throws.
@@ -85,11 +97,13 @@
 ### Task 3: Collections, reserved slug, migration
 
 **Files:**
+
 - Create: `src/collections/Campaigners.ts`, `src/collections/CampaignerSessions.ts`, migration under `src/migrations/`
 - Modify: `src/payload.config.ts` (register both), `src/fields/validation.ts` (add `reservedOrganizationSlug`), `src/collections/Organizations.ts:26`, `src/payload-types.ts` (generated), `tests/int/accessControl.int.spec.ts`
 - Test: `tests/int/campaigners.int.spec.ts`
 
 **Interfaces:**
+
 - Produces: collections `campaigners` (`email` unique, `name`, `oidcIssuer`, `oidcSubject`, `lastLoginAt`) and `campaigner-sessions` (`campaigner` required + indexed, `expiresAt` required, `oidcSid` indexed, `idToken`, `refreshToken`, `accessTokenExpiresAt`, all OIDC fields optional); types `Campaigner`, `CampaignerSession` in `payload-types.ts`; `RESERVED_ORGANIZATION_SLUGS = ['dashboard']` and `reservedOrganizationSlug(value: unknown): string | true` in `src/fields/validation.ts`.
 
 - [ ] **Step 1: Check migration drift first**: `pnpm payload migrate:create catchup --skip-empty`. If a file is created, it means the schema already differs from the last migration: stop, show it to the user, commit it alone (`build(db): add catch-up migration`) once they agree. If none, continue.
@@ -109,11 +123,13 @@
 ### Task 4: OIDC mock and client
 
 **Files:**
+
 - Modify: `package.json` (`openid-client@^6`, dev `oauth2-mock-server`)
 - Create: `src/lib/campaignerOidc.ts`, `tests/helpers/oidcMock.ts`
 - Test: covered from Task 5 (this task has no behaviour of its own beyond what Task 5 exercises) — its deliverable is checked by Step 4.
 
 **Interfaces:**
+
 - Consumes: `getCampaignerAuthConfig()`, `OidcConfig`.
 - Produces (`src/lib/campaignerOidc.ts`):
   ```ts
@@ -121,8 +137,15 @@
   export const hasClientRole: (accessToken: string, clientId: string, role: string) => boolean
   ```
 - Produces (`tests/helpers/oidcMock.ts`):
+
   ```ts
-  export type MockUser = { sub: string; email?: string; email_verified?: boolean; name?: string; roles?: string[] }
+  export type MockUser = {
+    sub: string
+    email?: string
+    email_verified?: boolean
+    name?: string
+    roles?: string[]
+  }
   export const startOidcMock: (port: number) => Promise<OidcMock>
   type OidcMock = {
     issuer: string
@@ -145,23 +168,43 @@
 ### Task 5: Login (authorize + callback) and session creation
 
 **Files:**
+
 - Create: `src/lib/campaignerSession.ts` (creation part), `src/lib/campaignerLogin.ts`
 - Modify: `src/lib/db.ts` (add `getPoolDb`)
 - Test: `tests/int/campaignerOidc.int.spec.ts` (mock started on port 4010 in `beforeAll` — all OIDC int tests live in this one file because the issuer is process-wide)
 
 **Interfaces:**
+
 - Consumes: `getOidcClient`, `hasClientRole`, `encryptSecret`, `getCampaignerAuthConfig`, `startOidcMock`.
 - Produces:
+
   ```ts
   // campaignerSession.ts
-  export type OidcSessionTokens = { sid: string | null; idToken: string; refreshToken: string | null; accessTokenExpiresAt: Date; refreshExpiresAt: Date | null }
-  export const createCampaignerSession: (payload: Payload, campaignerId: number, oidc: OidcSessionTokens | null) => Promise<string> // Set-Cookie
+  export type OidcSessionTokens = {
+    sid: string | null
+    idToken: string
+    refreshToken: string | null
+    accessTokenExpiresAt: Date
+    refreshExpiresAt: Date | null
+  }
+  export const createCampaignerSession: (
+    payload: Payload,
+    campaignerId: number,
+    oidc: OidcSessionTokens | null,
+  ) => Promise<string> // Set-Cookie
   export const clearCampaignerSessionCookie: () => string
   // campaignerLogin.ts
-  export type LoginErrorCode = 'provider' | 'state' | 'email-missing' | 'email-unverified' | 'access-denied' | 'email-conflict'
+  export type LoginErrorCode =
+    'provider' | 'state' | 'email-missing' | 'email-unverified' | 'access-denied' | 'email-conflict'
   export const safeReturnTo: (value: string | null | undefined) => string // default '/fr/dashboard'
-  export const startLogin: (returnTo: string | null) => Promise<{ redirectUrl: string; setCookie: string }>
-  export const completeLogin: (payload: Payload, search: string, flowCookie: string | undefined) => Promise<
+  export const startLogin: (
+    returnTo: string | null,
+  ) => Promise<{ redirectUrl: string; setCookie: string }>
+  export const completeLogin: (
+    payload: Payload,
+    search: string,
+    flowCookie: string | undefined,
+  ) => Promise<
     | { ok: true; returnTo: string; setCookies: string[] }
     | { ok: false; error: LoginErrorCode; lang: Locale; setCookies: string[] }
   >
@@ -185,14 +228,20 @@
 ### Task 6: `getCampaigner` and the refresh lock
 
 **Files:**
+
 - Modify: `src/lib/campaignerSession.ts`
 - Test: `tests/int/campaignerOidc.int.spec.ts` (new `describe('getCampaigner')`)
 
 **Interfaces:**
+
 - Consumes: Task 5's session rows and cookie, `getPoolDb`, `getOidcClient`, `hasClientRole`, `decryptSecret`, `encryptSecret`.
 - Produces:
+
   ```ts
-  export const readCampaignerSession: (payload: Payload, headers: Headers) => Promise<CampaignerSession | null> // cookie + row, no refresh
+  export const readCampaignerSession: (
+    payload: Payload,
+    headers: Headers,
+  ) => Promise<CampaignerSession | null> // cookie + row, no refresh
   export const getCampaigner: (payload: Payload, headers: Headers) => Promise<Campaigner | null>
   ```
 
@@ -222,18 +271,25 @@
 ### Task 7: Logout, back-channel logout, endpoints
 
 **Files:**
+
 - Create: `src/lib/campaignerBackchannel.ts`, `src/endpoints/campaigners.ts`
 - Modify: `src/lib/campaignerSession.ts` (logout helper), `src/collections/Campaigners.ts` (`endpoints: campaignerEndpoints()`)
 - Test: `tests/int/campaignerOidc.int.spec.ts`, `tests/int/campaignerEndpoints.int.spec.ts`
 
 **Interfaces:**
+
 - Consumes: everything above.
 - Produces:
+
   ```ts
-  export const logoutCampaigner: (payload: Payload, headers: Headers) => Promise<{ redirectUrl: string; setCookie: string }>
+  export const logoutCampaigner: (
+    payload: Payload,
+    headers: Headers,
+  ) => Promise<{ redirectUrl: string; setCookie: string }>
   export const backchannelLogout: (payload: Payload, logoutToken: string) => Promise<boolean> // false = invalid token
   export const campaignerEndpoints: (getConfig?: () => CampaignerAuthConfig) => Endpoint[]
   ```
+
   Endpoints: `GET /oidc/authorize`, `GET /oidc/callback`, `POST /session/logout`, `POST /oidc/backchannel-logout`.
 
 - [ ] **Step 1: Write the failing tests**:
@@ -250,10 +306,12 @@
 ### Task 8: Dashboard pages, e2e, portal seed
 
 **Files:**
+
 - Create: `src/app/(frontend)/[lang]/dashboard/page.tsx`, `src/app/(frontend)/[lang]/dashboard/login/page.tsx`, `src/components/dashboard/copy.ts`, `tests/helpers/oidcMockServer.ts`, `tests/e2e/campaigner.e2e.spec.ts`
 - Modify: `playwright.config.ts` (`webServer` becomes an array: the mock first on port 4011, then `pnpm dev` with `CAMPAIGNER_AUTH_METHOD=oidc`, `OIDC_ISSUER=http://localhost:4011`, `OIDC_CLIENT_ID=mobibi`, `OIDC_CLIENT_SECRET=test-secret`, `OIDC_REQUIRED_ROLE=access`), `../plateforme-pour-la-d-mocratie/keycloak/realm-democratie.json`
 
 **Interfaces:**
+
 - Consumes: `getCampaigner`, `getCampaignerAuthConfig`, `LoginErrorCode`, `startOidcMock`.
 - Produces: `LOGIN_ERROR_MESSAGES: Record<LoginErrorCode, string>` and `DEFAULT_LOGIN_ERROR` in `copy.ts`.
 
@@ -273,6 +331,7 @@
 ### Task 9: Manual acceptance against Keycloak, docs
 
 **Files:**
+
 - Modify: `CLAUDE.md`
 
 - [ ] **Step 1: Run against the portal's Keycloak**: `pnpm keycloak:up` in `../plateforme-pour-la-d-mocratie`; mobibi `.env` with `CAMPAIGNER_AUTH_METHOD=oidc`, `OIDC_ISSUER=http://localhost:8180/realms/democratie`, `OIDC_CLIENT_ID=mobibi`, `OIDC_CLIENT_SECRET=dev-mobibi-secret`, `OIDC_REQUIRED_ROLE=access`; `pnpm dev`. Check each acceptance criterion of the issue, with the seed users:
@@ -281,7 +340,7 @@
   - ending the session in the Keycloak admin console (Sessions → Sign out) ends the mobibi one (back-channel reaches `host.docker.internal:3000`: `next dev` must listen on all interfaces);
   - disabling the user, or removing `access`, ends the mobibi session within 5 minutes;
   - unsetting `CAMPAIGNER_AUTH_METHOD` → `/fr/dashboard` and `/api/campaigners/oidc/authorize` return 404; `magic-link` or a missing `OIDC_CLIENT_SECRET` → `pnpm dev` fails with the message.
-  Report each result to the user; any failure goes back to the owning task.
+    Report each result to the user; any failure goes back to the owning task.
 - [ ] **Step 2: Update `CLAUDE.md`** with the lines proposed in the spec (Routes, Data model, Auth).
 - [ ] **Step 3: Verify**: `pnpm lint`, `pnpm test:int`, `pnpm test:e2e`, `pnpm format` — Expected: all clean.
 - [ ] **Step 4: Commit** — `docs: document campaigner accounts and OIDC login`
