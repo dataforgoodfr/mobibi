@@ -1,6 +1,15 @@
-import type { PayloadRequest } from 'payload'
+import type { Payload, PayloadRequest } from 'payload'
 
 export type DrizzleLike = { execute: (query: unknown) => Promise<unknown> }
+
+type DrizzleAdapter = {
+  drizzle: DrizzleLike
+  sessions?: Record<string, { db?: DrizzleLike }>
+}
+
+/** The pooled Drizzle handle, for raw SQL that runs outside any request transaction. */
+export const getDrizzleDb = (payload: Payload): DrizzleLike =>
+  (payload.db as unknown as DrizzleAdapter).drizzle
 
 /**
  * Resolve the Drizzle handle bound to the current transaction, so a raw-SQL
@@ -12,15 +21,11 @@ export type DrizzleLike = { execute: (query: unknown) => Promise<unknown> }
  * same reason: a read-modify-write loses updates under concurrency.
  */
 export const getDb = (req: PayloadRequest): DrizzleLike => {
-  const adapter = req.payload.db as unknown as {
-    drizzle: DrizzleLike
-    sessions?: Record<string, { db?: DrizzleLike }>
-  }
-
   if (req.transactionID !== undefined) {
+    const adapter = req.payload.db as unknown as DrizzleAdapter
     const session = adapter.sessions?.[String(req.transactionID)]
     if (session?.db) return session.db
   }
 
-  return adapter.drizzle
+  return getDrizzleDb(req.payload)
 }

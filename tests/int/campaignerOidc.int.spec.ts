@@ -1,3 +1,5 @@
+import { sql } from 'drizzle-orm'
+import { SignJWT } from 'jose'
 import { getPayload, type Payload } from 'payload'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
@@ -5,7 +7,10 @@ import { completeLogin, safeReturnTo, startLogin } from '@/lib/campaignerLogin'
 import {
   CAMPAIGNER_SESSION_MAX_LIFETIME_SECONDS,
   createCampaignerSession,
+  getCampaigner,
+  readCampaignerSession,
 } from '@/lib/campaignerSession'
+import { getDrizzleDb } from '@/lib/db'
 import { decryptSecret } from '@/lib/secretBox'
 import config from '@/payload.config'
 
@@ -398,6 +403,186 @@ describe('campaigner OIDC login', () => {
       const result = await completeLogin(payload, '?error=server_error', flowCookie)
       expect(result).toMatchObject({ ok: false, error: 'provider' })
       await expectNoCampaigner(sub('providererror'))
+    })
+  })
+
+  describe('getCampaigner', () => {
+    const headersFor = (setCookie: string) =>
+      new Headers({ cookie: `campaigner-token=${cookieValue(setCookie)}` })
+
+    const signIn = async (name: string, extra: Partial<MockUser> = {}) => {
+      const user = verified(name, extra)
+      const result = await login(user)
+      if (!result.ok) throw new Error(`login failed: ${result.error}`)
+      const [campaigner] = await findBySubject(user.sub)
+      const [session] = await sessionsOf(campaigner.id)
+      const setCookie = result.setCookies.find((c) => c.startsWith('campaigner-token='))!
+      return { user, campaigner, session, headers: headersFor(setCookie) }
+    }
+
+    const findSession = (id: number) =>
+      payload.findByID({ collection: 'campaigner-sessions', id, depth: 0, disableErrors: true })
+
+    const expireAccessToken = (id: number, value: string | null = new Date(0).toISOString()) =>
+      payload.update({
+        collection: 'campaigner-sessions',
+        id,
+        data: { accessTokenExpiresAt: value },
+      })
+
+    it('returns the campaigner for a fresh session without refreshing', async () => {
+      const { campaigner, headers } = await signIn('gc-fresh')
+      const before = mock.refreshCount()
+      expect(await getCampaigner(payload, headers)).toMatchObject({ id: campaigner.id })
+      expect(mock.refreshCount()).toBe(before)
+    })
+
+    it('returns null without a cookie or with a forged one', async () => {
+      expect(await getCampaigner(payload, new Headers())).toBeNull()
+      expect(
+        await getCampaigner(payload, new Headers({ cookie: 'campaigner-token=forged' })),
+      ).toBeNull()
+    })
+
+    it('returns null for a cookie signed with another audience', async () => {
+      const { session } = await signIn('gc-audience')
+      const token = await new SignJWT({ sid: session.id })
+        .setProtectedHeader({ alg: 'HS256' })
+        .setAudience('campaigner-oidc-flow')
+        .setExpirationTime('1h')
+        .sign(new TextEncoder().encode(payload.secret))
+      const headers = new Headers({ cookie: `campaigner-token=${token}` })
+      expect(await getCampaigner(payload, headers)).toBeNull()
+    })
+
+    it('returns null once the row is deleted', async () => {
+      const { session, headers } = await signIn('gc-deleted')
+      await payload.delete({ collection: 'campaigner-sessions', id: session.id })
+      expect(await getCampaigner(payload, headers)).toBeNull()
+    })
+
+    it('returns null and deletes the row past expiresAt', async () => {
+      const { session, headers } = await signIn('gc-expired')
+      await payload.update({
+        collection: 'campaigner-sessions',
+        id: session.id,
+        data: { expiresAt: new Date(Date.now() - 1000).toISOString() },
+      })
+      expect(await getCampaigner(payload, headers)).toBeNull()
+      expect(await findSession(session.id)).toBeNull()
+    })
+
+    it('reads the session row without refreshing', async () => {
+      const { session, headers } = await signIn('gc-read')
+      await expireAccessToken(session.id)
+      const before = mock.refreshCount()
+      expect(await readCampaignerSession(payload, headers)).toMatchObject({ id: session.id })
+      expect(mock.refreshCount()).toBe(before)
+    })
+
+    it('refreshes an expired access token once and stores the new tokens', async () => {
+      const { campaigner, session, headers } = await signIn('gc-refresh')
+      await expireAccessToken(session.id)
+      const before = mock.refreshCount()
+
+      expect(await getCampaigner(payload, headers)).toMatchObject({ id: campaigner.id })
+      expect(mock.refreshCount()).toBe(before + 1)
+
+      const row = (await findSession(session.id))!
+      expect(new Date(row.accessTokenExpiresAt!).getTime()).toBeGreaterThan(Date.now() + 60_000)
+      const oldToken = decryptSecret(session.refreshToken!, payload.secret)
+      const newToken = decryptSecret(row.refreshToken!, payload.secret)
+      expect(newToken).not.toBe(oldToken)
+      expect(row.idToken).toBeTruthy()
+      expect(row.expiresAt).toBe(session.expiresAt)
+
+      expect(await getCampaigner(payload, headers)).toMatchObject({ id: campaigner.id })
+      expect(mock.refreshCount()).toBe(before + 1)
+    })
+
+    it('refreshes when accessTokenExpiresAt is null', async () => {
+      const { campaigner, session, headers } = await signIn('gc-null-expiry')
+      await expireAccessToken(session.id, null)
+      const before = mock.refreshCount()
+      expect(await getCampaigner(payload, headers)).toMatchObject({ id: campaigner.id })
+      expect(mock.refreshCount()).toBe(before + 1)
+    })
+
+    it('caps expiresAt at the session max lifetime on refresh', async () => {
+      const { session, headers } = await signIn('gc-cap')
+      await getDrizzleDb(payload).execute(
+        sql`UPDATE campaigner_sessions SET created_at = now() - interval '11 hours' WHERE id = ${session.id}`,
+      )
+      await expireAccessToken(session.id)
+
+      expect(await getCampaigner(payload, headers)).not.toBeNull()
+      const row = (await findSession(session.id))!
+      const cap = new Date(row.createdAt).getTime() + CAMPAIGNER_SESSION_MAX_LIFETIME_SECONDS * 1000
+      expect(new Date(row.expiresAt).getTime()).toBe(cap)
+      expect(Math.abs(cap - (Date.now() + 3600_000))).toBeLessThan(60_000)
+    })
+
+    it('slides expiresAt to the new refresh window', async () => {
+      const { session, headers } = await signIn('gc-slide')
+      await expireAccessToken(session.id)
+      mock.patchNextRefresh({ refresh_expires_in: 1800 })
+
+      expect(await getCampaigner(payload, headers)).not.toBeNull()
+      const row = (await findSession(session.id))!
+      expect(Math.abs(new Date(row.expiresAt).getTime() - (Date.now() + 1800_000))).toBeLessThan(
+        60_000,
+      )
+    })
+
+    it('caps a sliding refresh window at the session max lifetime', async () => {
+      const { session, headers } = await signIn('gc-slide-cap')
+      await expireAccessToken(session.id)
+      mock.patchNextRefresh({ refresh_expires_in: 2 * CAMPAIGNER_SESSION_MAX_LIFETIME_SECONDS })
+
+      expect(await getCampaigner(payload, headers)).not.toBeNull()
+      const row = (await findSession(session.id))!
+      const cap = new Date(row.createdAt).getTime() + CAMPAIGNER_SESSION_MAX_LIFETIME_SECONDS * 1000
+      expect(new Date(row.expiresAt).getTime()).toBe(cap)
+    })
+
+    it('returns null and deletes the row when the refresh fails', async () => {
+      const { session, headers } = await signIn('gc-fail')
+      await expireAccessToken(session.id)
+      mock.failNextRefresh()
+      expect(await getCampaigner(payload, headers)).toBeNull()
+      expect(await findSession(session.id)).toBeNull()
+    })
+
+    it('returns null and deletes the row when the role is gone on refresh', async () => {
+      const { user, session, headers } = await signIn('gc-role')
+      await expireAccessToken(session.id)
+      mock.setUser({ ...user, roles: [] })
+      expect(await getCampaigner(payload, headers)).toBeNull()
+      expect(await findSession(session.id)).toBeNull()
+    })
+
+    it('lets only one of several parallel requests refresh', async () => {
+      const { campaigner, session, headers } = await signIn('gc-parallel')
+      await expireAccessToken(session.id)
+      const before = mock.refreshCount()
+
+      const results = await Promise.all(
+        Array.from({ length: 5 }, () => getCampaigner(payload, headers)),
+      )
+
+      expect(results.map((r) => r?.id)).toEqual(Array(5).fill(campaigner.id))
+      expect(mock.refreshCount()).toBe(before + 1)
+    })
+
+    it('never refreshes a session without a refresh token', async () => {
+      const created = await payload.create({
+        collection: 'campaigners',
+        data: { email: email('gc-no-oidc') },
+      })
+      const setCookie = await createCampaignerSession(payload, created.id, null)
+      const before = mock.refreshCount()
+      expect(await getCampaigner(payload, headersFor(setCookie))).toMatchObject({ id: created.id })
+      expect(mock.refreshCount()).toBe(before)
     })
   })
 })

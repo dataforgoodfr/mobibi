@@ -17,6 +17,7 @@ export type OidcMock = {
   setUser(user: MockUser): void
   tamperIdToken(patch: Record<string, unknown>): void
   failNextRefresh(): void
+  patchNextRefresh(body: Record<string, unknown>): void
   refreshCount(): number
   authorizeCode(authorizationUrl: string): Promise<URL>
   buildLogoutToken(claims: Record<string, unknown>): Promise<string>
@@ -35,6 +36,7 @@ export const startOidcMock = async (port: number): Promise<OidcMock> => {
   let idTokenPatch: Record<string, unknown> | null = null
   let refreshCalls = 0
   let refreshArmed = false
+  let refreshPatch: Record<string, unknown> | null = null
 
   server.service.on('beforeTokenSigning', (token) => {
     const { payload } = token
@@ -60,6 +62,10 @@ export const startOidcMock = async (port: number): Promise<OidcMock> => {
   server.service.on('beforeResponse', (response, req) => {
     if (req.body.grant_type !== 'refresh_token') return
     refreshCalls += 1
+    if (refreshPatch) {
+      Object.assign(response.body as Record<string, unknown>, refreshPatch)
+      refreshPatch = null
+    }
     if (!refreshArmed) return
     refreshArmed = false
     response.statusCode = 400
@@ -76,6 +82,9 @@ export const startOidcMock = async (port: number): Promise<OidcMock> => {
     },
     failNextRefresh: () => {
       refreshArmed = true
+    },
+    patchNextRefresh: (body) => {
+      refreshPatch = body
     },
     refreshCount: () => refreshCalls,
     authorizeCode: async (authorizationUrl) => {

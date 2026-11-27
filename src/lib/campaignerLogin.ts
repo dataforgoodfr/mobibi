@@ -5,7 +5,13 @@ import { getPayload, ValidationError, type Payload } from 'payload'
 
 import { getCampaignerAuthConfig, type OidcConfig } from './campaignerAuthConfig'
 import { getOidcClient, hasClientRole } from './campaignerOidc'
-import { campaignerCookie, campaignerSecretKey, createCampaignerSession } from './campaignerSession'
+import {
+  campaignerCookie,
+  campaignerSecretKey,
+  createCampaignerSession,
+  tokenExpiries,
+  type OidcTokenResponse,
+} from './campaignerSession'
 import { isLocale, type Locale } from './locale'
 
 export type LoginErrorCode =
@@ -183,22 +189,11 @@ const upsertCampaigner = async (
   }
 }
 
-const tokensForSession = (
-  tokens: oidcClient.TokenEndpointResponse & { expiresIn(): number | undefined },
-) => {
-  const now = Date.now()
-  const expiresIn = tokens.expiresIn()
-  const refreshExpiresIn = tokens.refresh_expires_in
-  return {
-    idToken: tokens.id_token!,
-    refreshToken: tokens.refresh_token ?? null,
-    accessTokenExpiresAt: expiresIn !== undefined ? new Date(now + expiresIn * 1000) : null,
-    refreshExpiresAt:
-      typeof refreshExpiresIn === 'number' && refreshExpiresIn > 0
-        ? new Date(now + refreshExpiresIn * 1000)
-        : null,
-  }
-}
+const tokensForSession = (tokens: OidcTokenResponse) => ({
+  idToken: tokens.id_token!,
+  refreshToken: tokens.refresh_token ?? null,
+  ...tokenExpiries(tokens),
+})
 
 export const completeLogin = async (
   payload: Payload,
