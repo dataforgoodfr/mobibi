@@ -31,6 +31,7 @@ export async function up({ db, payload, req }: MigrateUpArgs): Promise<void> {
   CREATE UNIQUE INDEX "campaigners_email_idx" ON "campaigners" USING btree ("email");
   CREATE INDEX "campaigners_updated_at_idx" ON "campaigners" USING btree ("updated_at");
   CREATE INDEX "campaigners_created_at_idx" ON "campaigners" USING btree ("created_at");
+  CREATE INDEX "oidcIssuer_oidcSubject_idx" ON "campaigners" USING btree ("oidc_issuer","oidc_subject");
   CREATE INDEX "campaigner_sessions_campaigner_idx" ON "campaigner_sessions" USING btree ("campaigner_id");
   CREATE INDEX "campaigner_sessions_oidc_sid_idx" ON "campaigner_sessions" USING btree ("oidc_sid");
   CREATE INDEX "campaigner_sessions_updated_at_idx" ON "campaigner_sessions" USING btree ("updated_at");
@@ -42,17 +43,14 @@ export async function up({ db, payload, req }: MigrateUpArgs): Promise<void> {
 }
 
 export async function down({ db, payload, req }: MigrateDownArgs): Promise<void> {
+  // The rels go first: dropping the tables with CASCADE would already remove these constraints.
   await db.execute(sql`
-   ALTER TABLE "campaigners" DISABLE ROW LEVEL SECURITY;
-  ALTER TABLE "campaigner_sessions" DISABLE ROW LEVEL SECURITY;
-  DROP TABLE "campaigners" CASCADE;
-  DROP TABLE "campaigner_sessions" CASCADE;
-  ALTER TABLE "payload_locked_documents_rels" DROP CONSTRAINT "payload_locked_documents_rels_campaigners_fk";
-  
+   ALTER TABLE "payload_locked_documents_rels" DROP CONSTRAINT "payload_locked_documents_rels_campaigners_fk";
   ALTER TABLE "payload_locked_documents_rels" DROP CONSTRAINT "payload_locked_documents_rels_campaigner_sessions_fk";
-  
   DROP INDEX "payload_locked_documents_rels_campaigners_id_idx";
   DROP INDEX "payload_locked_documents_rels_campaigner_sessions_id_idx";
   ALTER TABLE "payload_locked_documents_rels" DROP COLUMN "campaigners_id";
-  ALTER TABLE "payload_locked_documents_rels" DROP COLUMN "campaigner_sessions_id";`)
+  ALTER TABLE "payload_locked_documents_rels" DROP COLUMN "campaigner_sessions_id";
+  DROP TABLE "campaigner_sessions" CASCADE;
+  DROP TABLE "campaigners" CASCADE;`)
 }

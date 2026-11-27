@@ -24,7 +24,7 @@ let payload: Payload
 let mock: OidcMock
 
 const run = Date.now()
-const email = (name: string) => `${name}-${run}@example.org`
+const email = (name: string) => `campaigner-oidc-${run}-${name}@example.org`
 const sub = (name: string) => `${name}-${run}`
 
 const cookieValue = (setCookie: string): string => {
@@ -103,7 +103,7 @@ describe('campaigner OIDC login', () => {
   afterAll(async () => {
     await payload.delete({
       collection: 'campaigners',
-      where: { email: { contains: `-${run}@` } },
+      where: { email: { contains: `campaigner-oidc-${run}-` } },
     })
     await mock.stop()
   })
@@ -113,6 +113,10 @@ describe('campaigner OIDC login', () => {
       expect(safeReturnTo(value)).toBe(value)
     })
 
+    it('percent-encodes characters a Location header cannot carry', () => {
+      expect(safeReturnTo('/fr/€')).toBe('/fr/%E2%82%AC')
+    })
+
     it.each([
       '//evil.com',
       '/\\evil.com',
@@ -120,6 +124,7 @@ describe('campaigner OIDC login', () => {
       '%2F%2Fevil.com',
       'javascript:alert(1)',
       '/\t/evil.com',
+      '/..//evil.com',
       '',
       null,
       undefined,
@@ -224,6 +229,22 @@ describe('campaigner OIDC login', () => {
     expect(after).toHaveLength(1)
     expect(after[0]).toMatchObject({ id: before.id, email: email('again-new'), name: 'Renamed' })
     expect(await sessionsOf(before.id)).toHaveLength(2)
+  })
+
+  it("removes the campaigner's expired sessions on a new login, keeping live ones", async () => {
+    expect((await login(verified('gc-login'))).ok).toBe(true)
+    const [campaigner] = await findBySubject(sub('gc-login'))
+    const [live] = await sessionsOf(campaigner.id)
+    const expired = await payload.create({
+      collection: 'campaigner-sessions',
+      data: { campaigner: campaigner.id, expiresAt: new Date(Date.now() - 60_000).toISOString() },
+    })
+
+    expect((await login(verified('gc-login'))).ok).toBe(true)
+
+    expect(await findSession(expired.id)).toBeNull()
+    expect(await findSession(live.id)).not.toBeNull()
+    expect(await sessionsOf(campaigner.id)).toHaveLength(2)
   })
 
   it('creates a campaigner without a name claim', async () => {
@@ -450,7 +471,7 @@ describe('campaigner OIDC login', () => {
 
     it('returns null for a cookie signed with another audience', async () => {
       const { session } = await signIn('gc-audience')
-      const token = await new SignJWT({ sid: session.id })
+      const token = await new SignJWT({ sessionId: session.id })
         .setProtectedHeader({ alg: 'HS256' })
         .setAudience('campaigner-oidc-flow')
         .setExpirationTime('1h')
@@ -766,6 +787,20 @@ describe('campaigner OIDC login', () => {
       expect(cookies).toHaveLength(2)
       expect(cookies.some((c) => c.startsWith('campaigner-oidc=;'))).toBe(true)
       expect(cookies.some((c) => /^campaigner-token=[^;]+/.test(c))).toBe(true)
+    })
+
+    it('callback redirects to a returnTo with non-Latin-1 characters', async () => {
+      const { search, flowCookie } = await callbackFor(verified('ep-unicode'), '/fr/€')
+      const response = await handler(
+        '/oidc/callback',
+        'get',
+      )(
+        request(`/oidc/callback${search}`, {
+          headers: { cookie: `campaigner-oidc=${flowCookie}` },
+        }),
+      )
+      expect(response.status).toBe(302)
+      expect(response.headers.get('location')).toBe('/fr/%E2%82%AC')
     })
 
     it('callback redirects to the login page with the error code', async () => {

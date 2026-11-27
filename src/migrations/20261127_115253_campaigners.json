@@ -3382,6 +3382,27 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "oidcIssuer_oidcSubject_idx": {
+          "name": "oidcIssuer_oidcSubject_idx",
+          "columns": [
+            {
+              "expression": "oidc_issuer",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "oidc_subject",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -4583,6 +4604,6 @@
     "tables": {},
     "columns": {}
   },
-  "id": "33fd06d7-a7cd-45a3-b029-b8bcaf433c81",
+  "id": "0e2ffc6c-3b66-4db8-ad2b-805a7f0ce660",
   "prevId": "00000000-0000-0000-0000-000000000000"
 }

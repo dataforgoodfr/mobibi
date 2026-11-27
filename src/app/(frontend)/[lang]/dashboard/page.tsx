@@ -37,7 +37,7 @@ export default async function DashboardPage({ params }: { params: Promise<{ lang
         <p>Votre compte n&apos;est rattaché à aucune organisation pour le moment.</p>
         <form method="post" action="/api/campaigners/session/logout">
           <Button type="submit" variant="outline">
-            Se déconnecter
+            Se déconnecter du tableau de bord
           </Button>
         </form>
       </Card>

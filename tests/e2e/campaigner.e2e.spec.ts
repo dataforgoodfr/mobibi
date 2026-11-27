@@ -23,7 +23,7 @@ const campaignerLoginAndLogout = async (page: Page, baseURL: string) => {
 
   // The provider sends the browser to `/`, which next.config.ts redirects on to `/fr`.
   const landing = page.waitForRequest(new URL('/', baseURL).href)
-  await page.getByRole('main').getByRole('button', { name: 'Se déconnecter' }).click()
+  await page.getByRole('button', { name: 'Se déconnecter du tableau de bord' }).click()
   await landing
   await expect(page).toHaveURL('/fr', { timeout: 15000 })
 }

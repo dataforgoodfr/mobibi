@@ -5,7 +5,7 @@ import config from '@/payload.config'
 
 let payload: Payload
 const run = Date.now()
-const email = (name: string) => `${name}-${run}@example.org`
+const email = (name: string) => `campaigners-model-${run}-${name}@example.org`
 
 describe('campaigners', () => {
   beforeAll(async () => {
@@ -15,7 +15,7 @@ describe('campaigners', () => {
   afterAll(async () => {
     await payload.delete({
       collection: 'campaigners',
-      where: { email: { contains: `-${run}@` } },
+      where: { email: { contains: `campaigners-model-${run}-` } },
     })
     await payload.delete({
       collection: 'organizations',
@@ -112,13 +112,13 @@ describe('campaigners', () => {
   it('stores the email lowercase and keeps it unique', async () => {
     const created = await payload.create({
       collection: 'campaigners',
-      data: { email: `Alice-${run}@Example.org`, name: 'Alice' },
+      data: { email: `Campaigners-Model-${run}-Alice@Example.org`, name: 'Alice' },
     })
-    expect(created.email).toBe(`alice-${run}@example.org`)
+    expect(created.email).toBe(email('alice'))
     await expect(
       payload.create({
         collection: 'campaigners',
-        data: { email: `alice-${run}@example.org`, name: 'Alice 2' },
+        data: { email: email('alice'), name: 'Alice 2' },
       }),
     ).rejects.toThrow(/email|unique/i)
   })
@@ -153,5 +153,19 @@ describe('reserved organization slugs', () => {
         data: { name: `reserved-${run}`, slug },
       }),
     ).rejects.toThrow(/invalid|valid|reserved/i)
+  })
+
+  it('rejects a name that slugifies to nothing', async () => {
+    await expect(
+      payload.create({ collection: 'organizations', data: { name: '!!!', slug: '' } }),
+    ).rejects.toThrow(/slug/i)
+  })
+
+  it('accepts a normal name', async () => {
+    const organization = await payload.create({
+      collection: 'organizations',
+      data: { name: `reserved-${run} ok`, slug: '' },
+    })
+    expect(organization.slug).toBe(`reserved-${run}-ok`)
   })
 })

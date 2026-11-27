@@ -11,7 +11,9 @@ import { getDrizzleDb } from './db'
 import { decryptSecret, encryptSecret } from './secretBox'
 
 const COOKIE_NAME = 'campaigner-token'
-// Same secret signs the citizen and flow cookies: the audience stops one being replayed as another.
+// The flow cookie shares this secret: the audience stops it being used as a session cookie, and
+// rejects the citizen cookie, which has none. The citizen strategy checks no audience; it rejects
+// a campaigner JWT by its claim shape (no `id`).
 export const CAMPAIGNER_SESSION_AUDIENCE = 'campaigner-session'
 // The cookie is never rewritten on refresh, so it carries the longest a session may live;
 // the row's sliding `expiresAt` decides whether it is still valid.
@@ -71,6 +73,16 @@ export const createCampaignerSession = async (
   const expiresAt =
     refreshExpiresAt && refreshExpiresAt < cookieExpiresAt ? refreshExpiresAt : cookieExpiresAt
 
+  await payload.delete({
+    collection: 'campaigner-sessions',
+    where: {
+      and: [
+        { campaigner: { equals: campaignerId } },
+        { expiresAt: { less_than: new Date().toISOString() } },
+      ],
+    },
+  })
+
   const session = await payload.create({
     collection: 'campaigner-sessions',
     data: {
@@ -83,7 +95,7 @@ export const createCampaignerSession = async (
     },
   })
 
-  const token = await new SignJWT({ sid: session.id })
+  const token = await new SignJWT({ sessionId: session.id })
     .setProtectedHeader({ alg: 'HS256' })
     .setAudience(CAMPAIGNER_SESSION_AUDIENCE)
     .setIssuedAt()
@@ -109,7 +121,7 @@ const readSessionId = async (payload: Payload, headers: Headers): Promise<number
       audience: CAMPAIGNER_SESSION_AUDIENCE,
       algorithms: ['HS256'],
     })
-    return typeof claims.sid === 'number' ? claims.sid : null
+    return typeof claims.sessionId === 'number' ? claims.sessionId : null
   } catch {
     return null
   }

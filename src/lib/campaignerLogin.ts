@@ -26,13 +26,19 @@ export const FLOW_COOKIE = 'campaigner-oidc'
 const FLOW_TTL_SECONDS = 600
 const FLOW_AUDIENCE = 'campaigner-oidc-flow'
 const DEFAULT_RETURN_TO = '/fr/dashboard'
+const RETURN_TO_BASE = 'http://campaigner.invalid'
 
 // Browsers strip tabs and newlines and read `\` as `/`, so `/\t/evil.com` and `/\evil.com`
 // both leave the origin.
 export const safeReturnTo = (value: string | null | undefined): string => {
   if (!value || !value.startsWith('/') || value.startsWith('//')) return DEFAULT_RETURN_TO
   if (/[\\\x00-\x1f\x7f]/.test(value)) return DEFAULT_RETURN_TO
-  return value
+  // Percent-encodes what a `Location` header cannot carry (non-Latin-1 would throw).
+  const url = new URL(value, RETURN_TO_BASE)
+  if (url.origin !== RETURN_TO_BASE) return DEFAULT_RETURN_TO
+  const normalized = url.pathname + url.search + url.hash
+  // Dot segments can collapse to `//`: `/..//evil.com` has the pathname `//evil.com`.
+  return normalized.startsWith('//') ? DEFAULT_RETURN_TO : normalized
 }
 
 const requireOidc = (): OidcConfig => {

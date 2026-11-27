@@ -18,6 +18,8 @@ export const Campaigners: CollectionConfig = {
     delete: isAdmin,
   },
   endpoints: campaignerEndpoints(),
+  // Not unique: the hook enforces uniqueness only once both are set.
+  indexes: [{ fields: ['oidcIssuer', 'oidcSubject'] }],
   hooks: {
     beforeValidate: [
       async ({ data, originalDoc, req }) => {
