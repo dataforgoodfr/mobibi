@@ -15,9 +15,6 @@ export default defineConfig({
     // moment any test touches real JWT signing.
     environment: 'node',
     setupFiles: ['./vitest.setup.ts'],
-    // Each test file opens its own Payload pool (up to 10 connections): one worker per core
-    // exhausts a local Postgres's default max_connections of 100.
-    maxWorkers: 4,
     include: ['tests/int/**/*.int.spec.ts'],
   },
 })

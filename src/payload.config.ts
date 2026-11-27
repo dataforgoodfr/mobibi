@@ -73,6 +73,7 @@ export default buildConfig({
   db: postgresAdapter({
     pool: {
       connectionString: process.env.DATABASE_URL || '',
+      max: Number(process.env.DATABASE_POOL_MAX) || undefined,
     },
     // Runs any pending migrations at payload.init() when push is off (i.e.
     // in production — push stays on by default in dev).
